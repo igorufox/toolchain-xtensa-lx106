@@ -12,6 +12,8 @@ TARGET=xtensa-lx106-elf
 GCC_LIB=lib/gcc/$TARGET/14.2.0
 HERE=$(cd "$(dirname "$0")" && pwd)
 
+mkdir -p "$DIST"
+DIST=$(cd "$DIST" && pwd)
 PKG=$DIST/pkg
 rm -rf "$PKG" && mkdir -p "$PKG/$GCC_LIB" "$PKG/$TARGET"
 
@@ -28,5 +30,18 @@ for lib in libc libc_nano libm libm_nano libstdc++ libsupc++; do
 done
 [ -s "$PKG/$GCC_LIB/libgcc.a" ] || { echo "package.sh: libgcc.a missing"; exit 1; }
 
-(cd "$PKG" && zip -qr "$DIST/$NAME" .)
-ls -la "$DIST/$NAME"
+# the archive by Python (zip -q left no file on the runner, 19.11): package.json at its root
+python3 - "$PKG" "$DIST/$NAME" <<'EOF'
+import os, sys, zipfile
+root, out = sys.argv[1], sys.argv[2]
+count = 0
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    for top, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(top, name)
+            z.write(path, os.path.relpath(path, root))
+            count += 1
+print(f"{out}: {count} files, {os.path.getsize(out)} bytes")
+EOF
+du -sh "$PKG"
