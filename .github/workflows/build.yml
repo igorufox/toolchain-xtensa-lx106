@@ -1,30 +1,66 @@
 name: Build
 
-# GCC 14.2 target libraries of the ESP8266 (xtensa-lx106-elf) from Espressif's sources (sources.txt). Every push builds
-# the PlatformIO package toolchain-xtensa as an artifact; a tag <gcc version>-espurna.<N> also releases it.
+# GCC 14.2 target libraries of the ESP8266 (xtensa-lx106-elf) from Espressif's sources (sources.txt), packed as the
+# PlatformIO package toolchain-xtensa. Every run keeps the package as an artifact; a push to main also releases it:
+# the tag is the version of package.json (14.2.0+espurna.1 -> 14.2.0-espurna.1), made by this workflow when that
+# release does not exist yet - a new release is a version bump of package.json.
+# The build (~25 min) runs only when its inputs changed: a green run whose commit has the same INPUTS gives its package.
 on:
   push:
     branches: [main]
-    tags: ['*-espurna.*']
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
+
+env:
+  INPUTS: sources.txt build-lx106.sh package.sh package.json
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        run: |
+          TAG=$(python3 -c "import json; print(json.load(open('package.json'))['version'].replace('+', '-'))")
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "ZIP=toolchain-xtensa-lx106-$TAG.zip" >> "$GITHUB_ENV"
+          if gh release view "$TAG" > /dev/null 2>&1; then echo "RELEASED=1" >> "$GITHUB_ENV"; fi
+
+      - name: Package of an earlier run with the same inputs
+        run: |
+          mkdir -p dist
+          for run in $(gh run list --workflow build.yml --status success --limit 30 --json databaseId,headSha \
+                       --jq '.[] | "\(.databaseId):\(.headSha)"'); do
+            id=${run%%:*}; sha=${run#*:}
+            git cat-file -e "$sha^{commit}" 2>/dev/null || continue
+            git diff --quiet "$sha" HEAD -- $INPUTS || continue
+            rm -rf prev && gh run download "$id" -n toolchain-xtensa-lx106 -D prev 2>/dev/null || continue
+            zip=$(ls prev/*.zip 2>/dev/null | head -1)
+            [ -n "$zip" ] || continue
+            cp "$zip" "dist/$ZIP"
+            echo "REUSED=1" >> "$GITHUB_ENV"
+            echo "package of run $id ($sha)"
+            break
+          done
 
       - name: Host packages
+        if: env.REUSED != '1'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bison flex texinfo gawk wget zip
+          sudo apt-get install -y build-essential bison flex texinfo gawk wget
 
       - name: Sources
+        if: env.REUSED != '1'
         run: |
           mkdir -p src
           grep -v '^#' sources.txt | while read -r dir url tag; do
@@ -36,16 +72,12 @@ jobs:
           ls src/lx106-crosstool-ng/overlays/xtensa_esp8266
 
       - name: Build
+        if: env.REUSED != '1'
         run: SRC_ROOT=$PWD/src WORK=$PWD/work JOBS=$(nproc) bash build-lx106.sh
 
       - name: Package
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then
-            echo "ZIP=toolchain-xtensa-lx106-$GITHUB_REF_NAME.zip" >> "$GITHUB_ENV"
-          else
-            echo "ZIP=toolchain-xtensa-lx106-${GITHUB_SHA::8}.zip" >> "$GITHUB_ENV"
-          fi
-      - run: bash package.sh "$PWD/work/_install" "$PWD/dist" "$ZIP"
+        if: env.REUSED != '1'
+        run: bash package.sh "$PWD/work/_install" "$PWD/dist" "$ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -53,7 +85,5 @@ jobs:
           path: dist/*.zip
 
       - name: Release
-        if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "dist/$ZIP" --title "$GITHUB_REF_NAME" --notes-file RELEASE.md
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.RELEASED != '1'
+        run: gh release create "$TAG" "dist/$ZIP" --target "$GITHUB_SHA" --title "$TAG" --notes-file RELEASE.md
