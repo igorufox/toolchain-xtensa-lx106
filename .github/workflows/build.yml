@@ -1,0 +1,59 @@
+name: Build
+
+# GCC 14.2 target libraries of the ESP8266 (xtensa-lx106-elf) from Espressif's sources (sources.txt). Every push builds
+# the PlatformIO package toolchain-xtensa as an artifact; a tag <gcc version>-espurna.<N> also releases it.
+on:
+  push:
+    branches: [main]
+    tags: ['*-espurna.*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex texinfo gawk wget zip
+
+      - name: Sources
+        run: |
+          mkdir -p src
+          grep -v '^#' sources.txt | while read -r dir url tag; do
+            [ -n "$dir" ] || continue
+            git clone -q --depth 1 --branch "$tag" "$url" "src/$dir"
+          done
+          # the xtensa_esp8266 overlay is a submodule of crosstool-NG
+          git -C src/lx106-crosstool-ng submodule update -q --init --depth 1 -- overlays
+          ls src/lx106-crosstool-ng/overlays/xtensa_esp8266
+
+      - name: Build
+        run: SRC_ROOT=$PWD/src WORK=$PWD/work JOBS=$(nproc) bash build-lx106.sh
+
+      - name: Package
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "ZIP=toolchain-xtensa-lx106-$GITHUB_REF_NAME.zip" >> "$GITHUB_ENV"
+          else
+            echo "ZIP=toolchain-xtensa-lx106-${GITHUB_SHA::8}.zip" >> "$GITHUB_ENV"
+          fi
+      - run: bash package.sh "$PWD/work/_install" "$PWD/dist" "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-xtensa-lx106
+          path: dist/*.zip
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "dist/$ZIP" --title "$GITHUB_REF_NAME" --notes-file RELEASE.md

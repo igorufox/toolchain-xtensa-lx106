@@ -1,0 +1,11 @@
+{
+  "name": "toolchain-xtensa",
+  "version": "14.2.0+espurna.1",
+  "description": "ESP8266 slot of the espressif8266 platform (toolchain-xtensa): GCC 14.2 target libraries of the ESP8266 (lx106, call0): libgcc, newlib and newlib-nano 4.3, libstdc++, with their headers. Built by GitHub Actions from Espressif's sources of the esp-14.2.0_20260121 release (build-lx106.sh); the compiler is Espressif's toolchain-xtensa-esp-elf 14.2 with xtensa_esp8266.so",
+  "keywords": ["toolchain", "gcc", "esp8266", "xtensa", "lx106"],
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/igorufox/toolchain-xtensa-lx106"
+  }
+}

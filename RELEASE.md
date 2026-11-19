@@ -1,0 +1,1 @@
+GCC 14.2 target libraries for the ESP8266 (libgcc, newlib / newlib-nano 4.3, libstdc++, headers), Espressif esp-14.2.0_20260121 sources, built by GitHub Actions. PlatformIO package toolchain-xtensa for ESPurna.

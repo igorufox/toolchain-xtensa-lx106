@@ -1,0 +1,6 @@
+# Espressif's sources of the esp-14.2.0_20260121 release: <directory> <repository> <tag>
+# (the directories build-lx106.sh expects under SRC_ROOT)
+lx106-gcc https://github.com/espressif/gcc.git esp-14.2.0_20260121
+lx106-binutils https://github.com/espressif/binutils-gdb.git esp-2.43.1_20260121
+lx106-newlib https://github.com/espressif/newlib-esp32.git esp-4.3.0_20260121
+lx106-crosstool-ng https://github.com/espressif/crosstool-NG.git esp-14.2.0_20260121
